@@ -1,6 +1,7 @@
-const express = require('express');
-const personController = require('../controllers/personController');
-const validatePerson = require('../middleware/validatePerson');
+import express from 'express';
+import personController from '../controllers/personController.js';
+import validatePerson from '../middleware/validatePerson.js';
+
 const router = express.Router();
 
 router.post('/person', validatePerson, personController.createPerson);
@@ -8,4 +9,4 @@ router.get('/person/:id', personController.getPersonById);
 router.put('/person/:id', validatePerson, personController.updatePerson);
 router.delete('/person/:id', personController.deletePerson);
 
-module.exports = router;
+export default router;

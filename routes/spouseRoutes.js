@@ -1,11 +1,12 @@
-const express = require('express');
-const spouseController = require('../controllers/spouseController');
-const validateSpouse = require('../middleware/validateSpouse');
+import express from 'express';
+import spouseController from '../controllers/spouseController.js';
+import validateSpouse from '../middleware/validateSpouse.js';
+
 const router = express.Router();
 
-router.post('/spouse', validateSpouse, spouseController.addSpouseRelation);
-router.get('/spouse/:spouseId', spouseController.getSpouseDetails);
-router.put('/spouse/:husbandId/:wifeId', validateSpouse, spouseController.updateSpouseRelation);
-router.delete('/spouse/:husbandId/:wifeId', spouseController.removeSpouseRelation);
+router.post('/spouse', validateSpouse, spouseController.addSpouse);
+router.get('/spouse/:spouseId', spouseController.getSpouseById);
+router.put('/spouse/:husbandId/:wifeId', validateSpouse, spouseController.updateSpouse);
+router.delete('/spouse/:husbandId/:wifeId', spouseController.deleteSpouse);
 
-module.exports = router;
+export default router;
