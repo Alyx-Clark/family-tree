@@ -13,6 +13,9 @@ class Person {
 
     static async create(newPersonData, dbConnection) {
         try {
+            const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+            newPersonData.createdAt = newPersonData.createdAt || currentDate;
+            newPersonData.updatedAt = newPersonData.updatedAt || currentDate;
             const query = 'INSERT INTO Person (Name, Birthday, Deathdate, PlaceOfBirth, AboutMe, IsActive, CreatedAt, UpdatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
             const results = await dbConnection.query(query, [newPersonData.name, newPersonData.birthday, newPersonData.deathdate, newPersonData.placeOfBirth, newPersonData.aboutMe, newPersonData.isActive, newPersonData.createdAt, newPersonData.updatedAt]);
             return results;
