@@ -8,10 +8,10 @@ const app = express();
 app.use(express.json());
 
 // Use routes
-app.use('/api/persons', personRoutes);
-app.use('/api/photos', photoRoutes);
-app.use('/api/parentChild', parentChildRoutes);
-app.use('/api/spouses', spouseRoutes);
+app.use('/api', personRoutes);
+app.use('/api', photoRoutes);
+app.use('/api', parentChildRoutes);
+app.use('/api', spouseRoutes);
 // other app.use() calls for different routes...
 
 app.get('/test', (req, res) => {
