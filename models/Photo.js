@@ -11,6 +11,9 @@ class Photo {
     // Create a new photo entry
     static async create(newPhotoData, dbConnection) {
         try {
+            const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
+            newPhotoData.createdAt = newPhotoData.createdAt || currentDate;
+            newPhotoData.updatedAt = newPhotoData.updatedAt || currentDate;
             const query = 'INSERT INTO Photo (PhotoUrl, Description, CreatedAt, UpdatedAt, PersonId) VALUES (?, ?, ?, ?, ?)';
             const results = await dbConnection.query(query, [newPhotoData.photoUrl, newPhotoData.description, newPhotoData.createdAt, newPhotoData.updatedAt, newPhotoData.personId]);
             return results;

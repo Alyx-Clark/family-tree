@@ -1,21 +1,23 @@
-const express = require('express');
-const personRoutes = require('./routes/personRoutes');
-const photoRoutes = require('./routes/photoRoutes');
-const parentChildRoutes = require('./routes/parentChildRoutes');
-const spouseRoutes = require('./routes/spouseRoutes');
-// other route imports...
+import express from 'express';
+import personRoutes from './routes/personRoutes';
+import photoRoutes from './routes/photoRoutes';
+import parentChildRoutes from './routes/parentChildRoutes';
+import spouseRoutes from './routes/spouseRoutes';
 
 const app = express();
 app.use(express.json());
 
 // Use routes
-app.use('/api/persons', personRoutes);
-app.use('/api/photos', photoRoutes);
-app.use('/api/parentChild', parentChildRoutes);
-app.use('/api/spouses', spouseRoutes);
+app.use('/api', personRoutes);
+app.use('/api', photoRoutes);
+app.use('/api', parentChildRoutes);
+app.use('/api', spouseRoutes);
 // other app.use() calls for different routes...
+
+app.get('/test', (req, res) => {
+    res.status(200).send('Server is working!');
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-// Additional configurations...
