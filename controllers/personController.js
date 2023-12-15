@@ -5,7 +5,7 @@ const personController = {
     // Create a new person
     async createPerson(req, res) {
         try {
-            const newPersonData = req.body; // assuming your request body has the new person data
+            const newPersonData = req.body;
             const result = await Person.create(newPersonData, dbConnection);
             res.status(201).json({ message: 'Person created successfully', data: result });
         } catch (error) {
