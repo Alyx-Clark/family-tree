@@ -15,6 +15,6 @@
   },
   "scripts": {
     "start": "bun app.js",
-    "serve": "vue-cli-service serve"
+    "serve": "bun vue-cli-service serve"
   }
 }

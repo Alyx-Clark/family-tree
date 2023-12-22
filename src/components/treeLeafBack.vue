@@ -1,6 +1,6 @@
 <template>
     <div class="leaf-back">
-        <h1>hello, this is the back of the tree leaf</h1>
+        
     </div>
 </template>
   
