@@ -20,24 +20,25 @@
       :style="transformStyle"
     >
       <!-- SVG Layer for Branches -->
-      <svg class="branches-layer">
+      <svg class="branches-layer" :viewBox="svgViewBox" :style="svgStyle">
         <defs>
           <linearGradient id="branchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
             <stop offset="0%" style="stop-color: #6b5344; stop-opacity: 1" />
             <stop offset="100%" style="stop-color: #4a3728; stop-opacity: 1" />
           </linearGradient>
-          <linearGradient id="barkTexture" x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" style="stop-color: #8b7355; stop-opacity: 0.5" />
-            <stop offset="50%" style="stop-color: #5c4033; stop-opacity: 0.3" />
-            <stop offset="100%" style="stop-color: #8b7355; stop-opacity: 0.5" />
-          </linearGradient>
         </defs>
-        <FamilyBranch
+        <!-- Render all branches as paths -->
+        <path
           v-for="branch in visibleBranches"
           :key="branch.id"
-          :from-position="branch.fromPosition"
-          :to-position="branch.toPosition"
-          :relationship-type="branch.relationshipType"
+          :d="branch.pathData"
+          :stroke="branch.strokeColor"
+          :stroke-width="branch.relationshipType === 'spouse' ? 3 : 5"
+          :stroke-dasharray="branch.relationshipType === 'spouse' ? '8,4' : 'none'"
+          fill="none"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          class="branch-path"
         />
       </svg>
       
@@ -148,22 +149,59 @@ const memberPositions = computed(() => {
   return calculateLayout(members.value, relationships.value)
 })
 
-// SVG viewBox for branches - removed as SVG now uses direct positioning
+// SVG bounds that encompasses all member positions
+const svgBounds = computed(() => {
+  if (members.value.length === 0) {
+    return { minX: -500, minY: -500, width: 1000, height: 1000 }
+  }
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  
+  memberPositions.value.forEach(pos => {
+    minX = Math.min(minX, pos.x - 100)
+    minY = Math.min(minY, pos.y - 100)
+    maxX = Math.max(maxX, pos.x + NODE_WIDTH + 100)
+    maxY = Math.max(maxY, pos.y + NODE_HEIGHT + 100)
+  })
+  
+  return {
+    minX,
+    minY,
+    width: maxX - minX,
+    height: maxY - minY
+  }
+})
 
-// Generate branch data for rendering
+// SVG viewBox string
+const svgViewBox = computed(() => {
+  const b = svgBounds.value
+  return `${b.minX} ${b.minY} ${b.width} ${b.height}`
+})
+
+// SVG style for explicit positioning
+const svgStyle = computed(() => ({
+  position: 'absolute' as const,
+  left: `${svgBounds.value.minX}px`,
+  top: `${svgBounds.value.minY}px`,
+  width: `${svgBounds.value.width}px`,
+  height: `${svgBounds.value.height}px`
+}))
+
+// Generate branch data for rendering with family group logic
 const visibleBranches = computed(() => {
   const branches: Array<{
     id: string
-    fromPosition: Position
-    toPosition: Position
+    pathData: string
     relationshipType: string
+    strokeColor: string
   }> = []
 
   const processed = new Set<string>()
+  const processedFamilyGroups = new Set<string>()
 
+  // First, identify and draw spouse connections
   relationships.value.forEach(rel => {
-    // Draw parent, spouse, and sibling relationships (avoid duplicates)
-    if (!['parent', 'spouse', 'sibling'].includes(rel.relationship_type)) return
+    if (rel.relationship_type !== 'spouse') return
     
     const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
     if (processed.has(pairKey)) return
@@ -173,14 +211,149 @@ const visibleBranches = computed(() => {
     const toPos = memberPositions.value.get(rel.related_member_id)
 
     if (fromPos && toPos) {
+      // Draw horizontal spouse connector
+      const y = fromPos.y + NODE_HEIGHT / 2
+      const startX = Math.min(fromPos.x, toPos.x) + NODE_WIDTH
+      const endX = Math.max(fromPos.x, toPos.x)
+      const midX = (startX + endX) / 2
+      
       branches.push({
-        id: rel.id,
-        fromPosition: fromPos,
-        toPosition: toPos,
-        relationshipType: rel.relationship_type
+        id: `spouse-${pairKey}`,
+        pathData: `M ${startX} ${y} Q ${midX} ${y - 15}, ${endX} ${y}`,
+        relationshipType: 'spouse',
+        strokeColor: '#c9a227'
+      })
+
+      // Find shared children and draw family group branch
+      const parent1Children = new Set<string>()
+      const parent2Children = new Set<string>()
+      
+      relationships.value.forEach(r => {
+        if (r.member_id === rel.member_id && r.relationship_type === 'parent') {
+          parent1Children.add(r.related_member_id)
+        }
+        if (r.member_id === rel.related_member_id && r.relationship_type === 'parent') {
+          parent2Children.add(r.related_member_id)
+        }
+      })
+
+      // Find children that belong to both parents
+      const sharedChildren = Array.from(parent1Children).filter(c => parent2Children.has(c))
+      
+      if (sharedChildren.length > 0) {
+        const familyKey = [...sharedChildren].sort().join('-')
+        if (!processedFamilyGroups.has(familyKey)) {
+          processedFamilyGroups.add(familyKey)
+          
+          // Calculate positions
+          const spouseMidX = (fromPos.x + toPos.x + NODE_WIDTH) / 2
+          const spouseY = fromPos.y + NODE_HEIGHT / 2
+          const dropY = fromPos.y + NODE_HEIGHT + 40 // Vertical drop point
+          
+          // Get child positions
+          const childPositions = sharedChildren
+            .map(childId => memberPositions.value.get(childId))
+            .filter(pos => pos) as Position[]
+          
+          if (childPositions.length > 0) {
+            const childMinX = Math.min(...childPositions.map(p => p.x + NODE_WIDTH / 2))
+            const childMaxX = Math.max(...childPositions.map(p => p.x + NODE_WIDTH / 2))
+            const horizontalY = dropY + 30
+            
+            // Draw vertical line from spouse connector down
+            branches.push({
+              id: `family-drop-${familyKey}`,
+              pathData: `M ${spouseMidX} ${spouseY + 20} L ${spouseMidX} ${horizontalY}`,
+              relationshipType: 'family-drop',
+              strokeColor: '#5c4033'
+            })
+            
+            // Draw horizontal bar connecting to all children
+            if (childPositions.length > 1) {
+              branches.push({
+                id: `family-bar-${familyKey}`,
+                pathData: `M ${childMinX} ${horizontalY} L ${childMaxX} ${horizontalY}`,
+                relationshipType: 'family-bar',
+                strokeColor: '#5c4033'
+              })
+            }
+            
+            // Draw vertical lines down to each child
+            childPositions.forEach((childPos, i) => {
+              const childCenterX = childPos.x + NODE_WIDTH / 2
+              branches.push({
+                id: `family-child-${familyKey}-${i}`,
+                pathData: `M ${childCenterX} ${horizontalY} L ${childCenterX} ${childPos.y}`,
+                relationshipType: 'family-child',
+                strokeColor: '#5c4033'
+              })
+            })
+            
+            // Mark these parent-child relationships as processed
+            sharedChildren.forEach(childId => {
+              processed.add([rel.member_id, childId].sort().join('-'))
+              processed.add([rel.related_member_id, childId].sort().join('-'))
+            })
+          }
+        }
+      }
+    }
+  })
+
+  // Draw remaining parent-child relationships (single parents)
+  relationships.value.forEach(rel => {
+    if (rel.relationship_type !== 'parent') return
+    
+    const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
+    if (processed.has(pairKey)) return
+    processed.add(pairKey)
+
+    const fromPos = memberPositions.value.get(rel.member_id)
+    const toPos = memberPositions.value.get(rel.related_member_id)
+
+    if (fromPos && toPos) {
+      const startX = fromPos.x + NODE_WIDTH / 2
+      const startY = fromPos.y + NODE_HEIGHT
+      const endX = toPos.x + NODE_WIDTH / 2
+      const endY = toPos.y
+      const midY = (startY + endY) / 2
+      
+      branches.push({
+        id: `parent-${pairKey}`,
+        pathData: `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`,
+        relationshipType: 'parent',
+        strokeColor: '#5c4033'
       })
     }
   })
+
+  // Draw sibling relationships
+  relationships.value.forEach(rel => {
+    if (rel.relationship_type !== 'sibling') return
+    
+    const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
+    if (processed.has(pairKey)) return
+    processed.add(pairKey)
+
+    const fromPos = memberPositions.value.get(rel.member_id)
+    const toPos = memberPositions.value.get(rel.related_member_id)
+
+    if (fromPos && toPos) {
+      const y = fromPos.y + NODE_HEIGHT / 2
+      const startX = fromPos.x + NODE_WIDTH
+      const endX = toPos.x
+      const midX = (startX + endX) / 2
+      
+      branches.push({
+        id: `sibling-${pairKey}`,
+        pathData: `M ${startX} ${y} Q ${midX} ${y - 30}, ${endX} ${y}`,
+        relationshipType: 'sibling',
+        strokeColor: '#8b7355'
+      })
+    }
+  })
+
+  console.log('Visible branches:', branches.length)
 
   return branches
 })
@@ -330,6 +503,33 @@ const handleAddMember = async (data: {
           data.relationship.memberId, // Existing member (the child)
           'parent' as any
         )
+        
+        // Infer spouse relationships: if the child already has other parents, 
+        // the new parent should be a spouse of those existing parents
+        const existingChildId = data.relationship.memberId
+        const existingParentRelationships = relationships.value.filter(
+          r => r.member_id === existingChildId && r.relationship_type === 'child'
+        )
+        
+        // Create spouse relationships with existing parents
+        for (const rel of existingParentRelationships) {
+          const existingParentId = rel.related_member_id
+          // Don't create spouse relationship with self
+          if (existingParentId !== result.data.id) {
+            // Check if spouse relationship already exists
+            const spouseExists = relationships.value.some(
+              r => (r.member_id === result.data.id && r.related_member_id === existingParentId && r.relationship_type === 'spouse') ||
+                   (r.member_id === existingParentId && r.related_member_id === result.data.id && r.relationship_type === 'spouse')
+            )
+            if (!spouseExists) {
+              await addRelationship(
+                result.data.id,
+                existingParentId,
+                'spouse' as any
+              )
+            }
+          }
+        }
       } else if (data.relationship.type === 'sibling') {
         // For siblings: add sibling relationship AND inherit parents
         await addRelationship(
@@ -353,13 +553,35 @@ const handleAddMember = async (data: {
             'child' as any
           )
         }
-      } else {
-        // For spouse, order doesn't matter
+      } else if (data.relationship.type === 'spouse') {
+        // Add spouse relationship
         await addRelationship(
           data.relationship.memberId,
           result.data.id,
-          data.relationship.type as any
+          'spouse' as any
         )
+        
+        // Inherit children: new spouse becomes parent of partner's children
+        const partnerId = data.relationship.memberId
+        const partnerChildRelationships = relationships.value.filter(
+          r => r.member_id === partnerId && r.relationship_type === 'parent'
+        )
+        
+        // Make the new spouse a parent of each child
+        for (const rel of partnerChildRelationships) {
+          const childId = rel.related_member_id
+          // Check if parent relationship already exists
+          const parentExists = relationships.value.some(
+            r => r.member_id === result.data.id && r.related_member_id === childId && r.relationship_type === 'parent'
+          )
+          if (!parentExists) {
+            await addRelationship(
+              result.data.id,  // New spouse becomes parent
+              childId,         // of the partner's child
+              'parent' as any
+            )
+          }
+        }
       }
     }
   }
@@ -443,21 +665,12 @@ onMounted(async () => {
 }
 
 .branches-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 4000px;
-  height: 4000px;
-  margin-left: -2000px;
-  margin-top: -2000px;
   pointer-events: none;
   overflow: visible;
 }
 
 .members-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
+  position: relative;
 }
 
 .add-member-btn {

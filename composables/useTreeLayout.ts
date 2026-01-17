@@ -149,14 +149,73 @@ export const useTreeLayout = () => {
 
         sortedLevels.forEach(level => {
             const membersAtLevel = membersByLevel.get(level) || []
-            const levelWidth = membersAtLevel.length * HORIZONTAL_SPACING
-            const startX = -levelWidth / 2 + HORIZONTAL_SPACING / 2
 
-            membersAtLevel.forEach((member, index) => {
-                positions.set(member.id, {
-                    x: startX + index * HORIZONTAL_SPACING,
-                    y: level * VERTICAL_SPACING
-                })
+            // Group spouses together: organize into units (single person or spouse pair)
+            const positioned = new Set<string>()
+            const units: FamilyMember[][] = []
+
+            membersAtLevel.forEach(member => {
+                if (positioned.has(member.id)) return
+
+                // Check if this member has a spouse at the same level
+                const spouses = spouseMap.get(member.id)
+                const spouseAtSameLevel = spouses
+                    ? Array.from(spouses).find(spouseId => {
+                        const spouse = membersAtLevel.find(m => m.id === spouseId)
+                        return spouse && !positioned.has(spouseId)
+                    })
+                    : null
+
+                if (spouseAtSameLevel) {
+                    const spouse = membersAtLevel.find(m => m.id === spouseAtSameLevel)!
+                    units.push([member, spouse])
+                    positioned.add(member.id)
+                    positioned.add(spouseAtSameLevel)
+                } else {
+                    units.push([member])
+                    positioned.add(member.id)
+                }
+            })
+
+            // Calculate total width considering spouse pairs take up 2 positions but closer together
+            const SPOUSE_SPACING = 60 // Closer spacing for spouses
+            let totalWidth = 0
+            units.forEach(unit => {
+                if (unit.length === 2) {
+                    totalWidth += NODE_WIDTH + SPOUSE_SPACING // Spouse pair
+                } else {
+                    totalWidth += NODE_WIDTH
+                }
+            })
+            totalWidth += (units.length - 1) * (HORIZONTAL_SPACING - NODE_WIDTH)
+
+            let currentX = -totalWidth / 2
+
+            units.forEach((unit, unitIndex) => {
+                if (unit.length === 2) {
+                    // Position spouse pair close together
+                    positions.set(unit[0].id, {
+                        x: currentX,
+                        y: level * VERTICAL_SPACING
+                    })
+                    positions.set(unit[1].id, {
+                        x: currentX + NODE_WIDTH + SPOUSE_SPACING,
+                        y: level * VERTICAL_SPACING
+                    })
+                    currentX += NODE_WIDTH + SPOUSE_SPACING + NODE_WIDTH
+                } else {
+                    // Single person
+                    positions.set(unit[0].id, {
+                        x: currentX,
+                        y: level * VERTICAL_SPACING
+                    })
+                    currentX += NODE_WIDTH
+                }
+
+                // Add gap between units
+                if (unitIndex < units.length - 1) {
+                    currentX += HORIZONTAL_SPACING - NODE_WIDTH
+                }
             })
         })
 
