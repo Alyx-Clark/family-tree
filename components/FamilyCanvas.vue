@@ -263,7 +263,7 @@ const visibleBranches = computed(() => {
             // Draw vertical line from spouse connector down
             branches.push({
               id: `family-drop-${familyKey}`,
-              pathData: `M ${spouseMidX} ${spouseY + 20} L ${spouseMidX} ${horizontalY}`,
+              pathData: `M ${spouseMidX} ${spouseY - 7} L ${spouseMidX} ${horizontalY}`,
               relationshipType: 'family-drop',
               strokeColor: '#5c4033'
             })
@@ -496,6 +496,27 @@ const handleAddMember = async (data: {
           data.relationship.memberId, // Existing member (the parent)
           'child' as any
         )
+        
+        // Also make the new child a child of the parent's spouse
+        const parentId = data.relationship.memberId
+        const parentSpouseRelationships = relationships.value.filter(
+          r => r.member_id === parentId && r.relationship_type === 'spouse'
+        )
+        
+        for (const rel of parentSpouseRelationships) {
+          const spouseId = rel.related_member_id
+          // Check if relationship already exists
+          const alreadyChild = relationships.value.some(
+            r => r.member_id === result.data.id && r.related_member_id === spouseId && r.relationship_type === 'child'
+          )
+          if (!alreadyChild) {
+            await addRelationship(
+              result.data.id,  // New child
+              spouseId,        // Spouse of the parent
+              'child' as any
+            )
+          }
+        }
       } else if (data.relationship.type === 'parent') {
         // New member is parent of existing member  
         await addRelationship(

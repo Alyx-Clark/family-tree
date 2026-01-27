@@ -144,7 +144,7 @@ export const useTreeLayout = () => {
             membersByLevel.get(level)!.push(m)
         })
 
-        // Position members level by level
+        // Position members level by level, centering children under their parents
         const sortedLevels = Array.from(membersByLevel.keys()).sort((a, b) => a - b)
 
         sortedLevels.forEach(level => {
@@ -152,7 +152,7 @@ export const useTreeLayout = () => {
 
             // Group spouses together: organize into units (single person or spouse pair)
             const positioned = new Set<string>()
-            const units: FamilyMember[][] = []
+            const units: { members: FamilyMember[], parentCenter?: number }[] = []
 
             membersAtLevel.forEach(member => {
                 if (positioned.has(member.id)) return
@@ -166,55 +166,99 @@ export const useTreeLayout = () => {
                     })
                     : null
 
+                let unitMembers: FamilyMember[]
                 if (spouseAtSameLevel) {
                     const spouse = membersAtLevel.find(m => m.id === spouseAtSameLevel)!
-                    units.push([member, spouse])
+                    unitMembers = [member, spouse]
                     positioned.add(member.id)
                     positioned.add(spouseAtSameLevel)
                 } else {
-                    units.push([member])
+                    unitMembers = [member]
                     positioned.add(member.id)
                 }
+
+                // Find parent center position (if any parents are already positioned)
+                let parentCenter: number | undefined
+                for (const m of unitMembers) {
+                    const parents = parentMap.get(m.id)
+                    if (parents) {
+                        const parentPositions: number[] = []
+                        parents.forEach(parentId => {
+                            const parentPos = positions.get(parentId)
+                            if (parentPos) {
+                                parentPositions.push(parentPos.x + NODE_WIDTH / 2)
+                            }
+                        })
+                        if (parentPositions.length > 0) {
+                            // Use average of all parent centers
+                            parentCenter = parentPositions.reduce((a, b) => a + b, 0) / parentPositions.length
+                            break
+                        }
+                    }
+                }
+
+                units.push({ members: unitMembers, parentCenter })
             })
 
-            // Calculate total width considering spouse pairs take up 2 positions but closer together
-            const SPOUSE_SPACING = 60 // Closer spacing for spouses
-            let totalWidth = 0
+            // Sort units: first by whether they have parent positioning, then by parent center
+            units.sort((a, b) => {
+                if (a.parentCenter !== undefined && b.parentCenter !== undefined) {
+                    return a.parentCenter - b.parentCenter
+                }
+                if (a.parentCenter !== undefined) return -1
+                if (b.parentCenter !== undefined) return 1
+                return 0
+            })
+
+            // Position each unit
+            const SPOUSE_SPACING = 60
+            const occupiedRanges: { start: number, end: number }[] = []
+
             units.forEach(unit => {
-                if (unit.length === 2) {
-                    totalWidth += NODE_WIDTH + SPOUSE_SPACING // Spouse pair
-                } else {
-                    totalWidth += NODE_WIDTH
-                }
-            })
-            totalWidth += (units.length - 1) * (HORIZONTAL_SPACING - NODE_WIDTH)
+                const unitWidth = unit.members.length === 2
+                    ? NODE_WIDTH * 2 + SPOUSE_SPACING
+                    : NODE_WIDTH
 
-            let currentX = -totalWidth / 2
-
-            units.forEach((unit, unitIndex) => {
-                if (unit.length === 2) {
-                    // Position spouse pair close together
-                    positions.set(unit[0].id, {
-                        x: currentX,
-                        y: level * VERTICAL_SPACING
-                    })
-                    positions.set(unit[1].id, {
-                        x: currentX + NODE_WIDTH + SPOUSE_SPACING,
-                        y: level * VERTICAL_SPACING
-                    })
-                    currentX += NODE_WIDTH + SPOUSE_SPACING + NODE_WIDTH
+                let centerX: number
+                if (unit.parentCenter !== undefined) {
+                    // Center under parents
+                    centerX = unit.parentCenter
+                } else if (positions.size > 0) {
+                    // No parent, position at end
+                    const maxX = Math.max(...Array.from(positions.values()).map(p => p.x + NODE_WIDTH))
+                    centerX = maxX + HORIZONTAL_SPACING
                 } else {
-                    // Single person
-                    positions.set(unit[0].id, {
-                        x: currentX,
-                        y: level * VERTICAL_SPACING
-                    })
-                    currentX += NODE_WIDTH
+                    // First unit, center at 0
+                    centerX = 0
                 }
 
-                // Add gap between units
-                if (unitIndex < units.length - 1) {
-                    currentX += HORIZONTAL_SPACING - NODE_WIDTH
+                // Adjust to avoid overlap with already positioned units
+                let startX = centerX - unitWidth / 2
+                let collision = true
+                let maxIterations = 20
+
+                while (collision && maxIterations > 0) {
+                    collision = false
+                    for (const range of occupiedRanges) {
+                        if (startX < range.end + 30 && startX + unitWidth > range.start - 30) {
+                            // Collision detected, shift right
+                            startX = range.end + 30
+                            collision = true
+                            break
+                        }
+                    }
+                    maxIterations--
+                }
+
+                // Record this unit's occupied space
+                occupiedRanges.push({ start: startX, end: startX + unitWidth })
+
+                // Position the members
+                if (unit.members.length === 2) {
+                    positions.set(unit.members[0].id, { x: startX, y: level * VERTICAL_SPACING })
+                    positions.set(unit.members[1].id, { x: startX + NODE_WIDTH + SPOUSE_SPACING, y: level * VERTICAL_SPACING })
+                } else {
+                    positions.set(unit.members[0].id, { x: startX, y: level * VERTICAL_SPACING })
                 }
             })
         })
