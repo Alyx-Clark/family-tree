@@ -411,7 +411,10 @@ const endPan = () => {
 const handleZoom = (e: WheelEvent) => {
   e.preventDefault()
   
-  const delta = e.deltaY > 0 ? -0.1 : 0.1
+  // Use proportional delta for smoother trackpad pinch-to-zoom
+  // Trackpad gestures send many small deltas, so scale them down
+  const zoomSensitivity = 0.001
+  const delta = -e.deltaY * zoomSensitivity
   const newScale = Math.max(0.25, Math.min(2, scale.value + delta))
   
   scale.value = newScale
