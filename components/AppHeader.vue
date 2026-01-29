@@ -6,6 +6,11 @@
         <span class="logo-text">Family Tree</span>
       </NuxtLink>
 
+      <button class="theme-toggle" @click="toggleColorMode" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
+        <span class="theme-icon sun" :class="{ active: !isDark }">☀️</span>
+        <span class="theme-icon moon" :class="{ active: isDark }">🌙</span>
+      </button>
+
       <nav class="nav-links" v-if="!user">
         <NuxtLink to="/login" class="nav-link">Login</NuxtLink>
         <NuxtLink to="/signup" class="btn btn-primary">Get Started</NuxtLink>
@@ -48,6 +53,12 @@
 
 <script setup lang="ts">
 const { user, profile, signOut, fetchProfile } = useAuth()
+const { isDark, toggleColorMode, initColorMode } = useColorMode()
+
+// Initialize color mode on mount
+onMounted(() => {
+  initColorMode()
+})
 
 const isMenuOpen = ref(false)
 const menuRef = ref<HTMLElement | null>(null)
@@ -155,7 +166,39 @@ onMounted(() => {
 
 .nav-link:hover {
   color: var(--color-accent);
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
   background: var(--color-parchment);
+  border: 2px solid var(--color-parchment-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.theme-toggle:hover {
+  background: var(--color-parchment-dark);
+  transform: scale(1.05);
+}
+
+.theme-icon {
+  position: absolute;
+  font-size: 1.2rem;
+  transition: all var(--transition-base);
+  opacity: 0;
+  transform: scale(0.5) rotate(-180deg);
+}
+
+.theme-icon.active {
+  opacity: 1;
+  transform: scale(1) rotate(0deg);
 }
 
 .user-menu {

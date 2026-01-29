@@ -16,6 +16,11 @@
 
 <script setup lang="ts">
 const currentYear = new Date().getFullYear()
+const { initColorMode } = useColorMode()
+
+onMounted(() => {
+  initColorMode()
+})
 </script>
 
 <style scoped>
