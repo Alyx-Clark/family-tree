@@ -262,10 +262,11 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, var(--color-leaf), var(--color-leaf-dark));
+  background: linear-gradient(135deg, var(--color-leaf-green-light), var(--color-leaf-green));
   color: white;
   font-size: var(--text-4xl);
   font-weight: 700;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .modal-info {
