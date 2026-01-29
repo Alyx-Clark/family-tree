@@ -407,17 +407,43 @@ const endPan = () => {
   isPanning.value = false
 }
 
-// Zoom handlers
+// Zoom and pan handlers for trackpad gestures
 const handleZoom = (e: WheelEvent) => {
   e.preventDefault()
   
-  // Use proportional delta for smoother trackpad pinch-to-zoom
-  // Trackpad gestures send many small deltas, so scale them down
-  const zoomSensitivity = 0.001
-  const delta = -e.deltaY * zoomSensitivity
-  const newScale = Math.max(0.25, Math.min(2, scale.value + delta))
+  // Determine if this is a zoom gesture:
+  // - Pinch-to-zoom: ctrlKey is true
+  // - Mouse wheel: only vertical movement (deltaX === 0)
+  const isPinchZoom = e.ctrlKey
+  const isMouseWheel = !e.ctrlKey && e.deltaX === 0 && e.deltaY !== 0
   
-  scale.value = newScale
+  if (isPinchZoom || isMouseWheel) {
+    // Zoom sensitivity (mouse wheel is less sensitive than pinch)
+    const zoomSensitivity = isPinchZoom ? 0.005 : 0.001
+    const delta = -e.deltaY * zoomSensitivity
+    const newScale = Math.max(0.25, Math.min(2, scale.value + delta))
+    
+    // Zoom towards cursor position
+    if (canvasRef.value) {
+      const rect = canvasRef.value.getBoundingClientRect()
+      // Cursor position relative to canvas center
+      const cursorX = e.clientX - rect.left - rect.width / 2
+      const cursorY = e.clientY - rect.top - rect.height / 2
+      
+      // Calculate how much the point under cursor would move due to scale change
+      const scaleRatio = newScale / scale.value
+      
+      // Adjust offset to keep cursor position fixed
+      offsetX.value = cursorX - (cursorX - offsetX.value) * scaleRatio
+      offsetY.value = cursorY - (cursorY - offsetY.value) * scaleRatio
+    }
+    
+    scale.value = newScale
+  } else {
+    // Two-finger scroll on trackpad: pan in all directions
+    offsetX.value -= e.deltaX
+    offsetY.value -= e.deltaY
+  }
 }
 
 const zoomIn = () => {
