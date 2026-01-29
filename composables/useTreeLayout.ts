@@ -54,6 +54,107 @@ export const useTreeLayout = () => {
         return { childrenMap, parentMap, spouseMap, siblingMap }
     }
 
+    // Check if all parents in a set are connected via spouse/sibling relationships
+    // If not, they're from separate family trees (a "bridge couple" scenario)
+    const areParentsConnected = (
+        parentIds: Set<string>,
+        spouseMap: Map<string, Set<string>>,
+        siblingMap: Map<string, Set<string>>
+    ): boolean => {
+        const parents = Array.from(parentIds)
+        if (parents.length <= 1) return true
+
+        // Use BFS to check if all parents can reach each other
+        const visited = new Set<string>()
+        const queue = [parents[0]]
+        visited.add(parents[0])
+
+        while (queue.length > 0) {
+            const current = queue.shift()!
+
+            // Add connected spouses that are also parents
+            const spouses = spouseMap.get(current)
+            if (spouses) {
+                spouses.forEach(s => {
+                    if (!visited.has(s) && parentIds.has(s)) {
+                        visited.add(s)
+                        queue.push(s)
+                    }
+                })
+            }
+
+            // Add connected siblings that are also parents
+            const siblings = siblingMap.get(current)
+            if (siblings) {
+                siblings.forEach(s => {
+                    if (!visited.has(s) && parentIds.has(s)) {
+                        visited.add(s)
+                        queue.push(s)
+                    }
+                })
+            }
+        }
+
+        return visited.size === parents.length
+    }
+
+    // Get the subset of parents that are connected to each other
+    // Returns the largest connected group
+    const getConnectedParentGroup = (
+        parentIds: Set<string>,
+        spouseMap: Map<string, Set<string>>,
+        siblingMap: Map<string, Set<string>>
+    ): Set<string> => {
+        const parents = Array.from(parentIds)
+        if (parents.length <= 1) return parentIds
+
+        // Find all connected components among parents
+        const components: Set<string>[] = []
+        const assigned = new Set<string>()
+
+        parents.forEach(startParent => {
+            if (assigned.has(startParent)) return
+
+            const component = new Set<string>()
+            const queue = [startParent]
+            component.add(startParent)
+            assigned.add(startParent)
+
+            while (queue.length > 0) {
+                const current = queue.shift()!
+
+                const spouses = spouseMap.get(current)
+                if (spouses) {
+                    spouses.forEach(s => {
+                        if (!assigned.has(s) && parentIds.has(s)) {
+                            assigned.add(s)
+                            component.add(s)
+                            queue.push(s)
+                        }
+                    })
+                }
+
+                const siblings = siblingMap.get(current)
+                if (siblings) {
+                    siblings.forEach(s => {
+                        if (!assigned.has(s) && parentIds.has(s)) {
+                            assigned.add(s)
+                            component.add(s)
+                            queue.push(s)
+                        }
+                    })
+                }
+            }
+
+            components.push(component)
+        })
+
+        // Return the largest connected component
+        return components.reduce((largest, current) =>
+            current.size > largest.size ? current : largest
+            , components[0])
+    }
+
     // Calculate positions for all members based on relationships
     const calculateLayout = (
         members: FamilyMember[],
@@ -260,6 +361,48 @@ export const useTreeLayout = () => {
             })
         }
 
+        // Fourth pass: push parents DOWN to be exactly one level above their lowest child
+        // This handles the case where a new parent (like Sandra) is added to someone 
+        // already positioned lower in the tree through their spouse's lineage
+        changed = true
+        iterations = 0
+        while (changed && iterations < 10) {
+            changed = false
+            iterations++
+            members.forEach(m => {
+                const myLevel = levels.get(m.id) || 0
+                const children = childrenMap.get(m.id)
+                if (children && children.size > 0) {
+                    // Find the minimum level among all children
+                    let minChildLevel = Infinity
+                    children.forEach(childId => {
+                        const childLevel = levels.get(childId) || 0
+                        if (childLevel < minChildLevel) {
+                            minChildLevel = childLevel
+                        }
+                    })
+
+                    // Parent should be exactly one level above lowest child
+                    const requiredLevel = minChildLevel - 1
+                    if (myLevel < requiredLevel) {
+                        levels.set(m.id, requiredLevel)
+                        changed = true
+
+                        // Also sync spouse to same level
+                        const spouses = spouseMap.get(m.id)
+                        if (spouses) {
+                            spouses.forEach(spouseId => {
+                                const spouseLevel = levels.get(spouseId) || 0
+                                if (spouseLevel < requiredLevel) {
+                                    levels.set(spouseId, requiredLevel)
+                                }
+                            })
+                        }
+                    }
+                }
+            })
+        }
+
         // Group members by level
         const membersByLevel = new Map<number, FamilyMember[]>()
         members.forEach(m => {
@@ -327,28 +470,99 @@ export const useTreeLayout = () => {
                 siblingGroups.get(key)!.push(unit)
             })
 
+            // Sort siblings within each group: members with children connecting to other family trees
+            // should be on the right edge so their descendants have room on the right
+            siblingGroups.forEach((group, key) => {
+                if (group.length <= 1) return
+
+                group.sort((a, b) => {
+                    // Check if unit has children married to members from other family trees (orphan parents)
+                    const hasOrphanConnection = (unit: typeof a) => {
+                        for (const member of unit.members) {
+                            const children = childrenMap.get(member.id)
+                            if (children) {
+                                for (const childId of children) {
+                                    const childSpouses = spouseMap.get(childId)
+                                    if (childSpouses) {
+                                        for (const spouseId of childSpouses) {
+                                            // Check if spouse is an "orphan" (no parents) 
+                                            const spouseParents = parentMap.get(spouseId)
+                                            if (!spouseParents || spouseParents.size === 0) {
+                                                // This child is married to an orphan - unit should be on the edge
+                                                return true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return false
+                    }
+
+                    const aHasOrphan = hasOrphanConnection(a)
+                    const bHasOrphan = hasOrphanConnection(b)
+
+                    // Put units with orphan connections on the right
+                    if (aHasOrphan && !bHasOrphan) return 1  // a goes after b (to the right)
+                    if (bHasOrphan && !aHasOrphan) return -1 // b goes after a (a stays left)
+                    return 0 // keep original order
+                })
+            })
+
             // Position each sibling group centered under their parents
             const SPOUSE_SPACING = 60
             const UNIT_SPACING = 30
             const occupiedRanges: { start: number, end: number }[] = []
 
-            // Sort sibling groups by parent center position
+            // Sort sibling groups by parent center position (or by children position if no parents)
             const sortedGroups = Array.from(siblingGroups.entries()).sort((a, b) => {
-                const getGroupParentCenter = (group: typeof units) => {
+                const getGroupSortPosition = (group: typeof units) => {
                     const firstUnit = group[0]
-                    if (firstUnit.parentIds.size === 0) return Infinity
 
-                    const parentPositions: number[] = []
-                    firstUnit.parentIds.forEach(parentId => {
-                        const parentPos = positions.get(parentId)
-                        if (parentPos) {
-                            parentPositions.push(parentPos.x + NODE_WIDTH / 2)
+                    // Try to get position from parents first
+                    if (firstUnit.parentIds.size > 0) {
+                        // Use connected parents only for sorting
+                        const parentsConnected = areParentsConnected(firstUnit.parentIds, spouseMap, siblingMap)
+                        const parentsToUse = parentsConnected
+                            ? firstUnit.parentIds
+                            : getConnectedParentGroup(firstUnit.parentIds, spouseMap, siblingMap)
+
+                        const parentPositions: number[] = []
+                        parentsToUse.forEach(parentId => {
+                            const parentPos = positions.get(parentId)
+                            if (parentPos) {
+                                parentPositions.push(parentPos.x + NODE_WIDTH / 2)
+                            }
+                        })
+                        if (parentPositions.length > 0) {
+                            return parentPositions.reduce((a, b) => a + b, 0) / parentPositions.length
                         }
-                    })
-                    if (parentPositions.length === 0) return Infinity
-                    return parentPositions.reduce((a, b) => a + b, 0) / parentPositions.length
+                    }
+
+                    // No parents with positions - try to get position from children's spouses
+                    // This handles cases like Sandra whose child Karen is married to Melvin Arthur Clark
+                    for (const member of firstUnit.members) {
+                        const children = childrenMap.get(member.id)
+                        if (children) {
+                            for (const childId of children) {
+                                // Check if child's spouse has a position (via their family tree)
+                                const childSpouses = spouseMap.get(childId)
+                                if (childSpouses) {
+                                    for (const spouseId of childSpouses) {
+                                        const spousePos = positions.get(spouseId)
+                                        if (spousePos) {
+                                            // Position this parent near the child's spouse
+                                            return spousePos.x + NODE_WIDTH / 2
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    return Infinity
                 }
-                return getGroupParentCenter(a[1]) - getGroupParentCenter(b[1])
+                return getGroupSortPosition(a[1]) - getGroupSortPosition(b[1])
             })
 
             sortedGroups.forEach(([_key, group]) => {
@@ -363,16 +577,35 @@ export const useTreeLayout = () => {
                 })
 
                 // Find the center point (between parents if they exist)
-                let centerX: number
+                let centerX: number = totalGroupWidth / 2 // default fallback
                 const firstUnit = group[0]
                 if (firstUnit.parentIds.size > 0) {
+                    // Check if parents are all connected (same family tree) or disconnected (bridge couple)
+                    const parentsConnected = areParentsConnected(firstUnit.parentIds, spouseMap, siblingMap)
+
+                    // Use only connected parents for positioning if parents span multiple trees
+                    const parentsToUse = parentsConnected
+                        ? firstUnit.parentIds
+                        : getConnectedParentGroup(firstUnit.parentIds, spouseMap, siblingMap)
+
                     const parentPositions: number[] = []
-                    firstUnit.parentIds.forEach(parentId => {
+                    parentsToUse.forEach(parentId => {
                         const parentPos = positions.get(parentId)
                         if (parentPos) {
                             parentPositions.push(parentPos.x + NODE_WIDTH / 2)
                         }
                     })
+
+                    // If no connected parents have positions yet, try all parents
+                    if (parentPositions.length === 0 && !parentsConnected) {
+                        firstUnit.parentIds.forEach(parentId => {
+                            const parentPos = positions.get(parentId)
+                            if (parentPos) {
+                                parentPositions.push(parentPos.x + NODE_WIDTH / 2)
+                            }
+                        })
+                    }
+
                     if (parentPositions.length > 0) {
                         centerX = parentPositions.reduce((a, b) => a + b, 0) / parentPositions.length
                     } else if (positions.size > 0) {
@@ -381,11 +614,40 @@ export const useTreeLayout = () => {
                     } else {
                         centerX = 0
                     }
-                } else if (positions.size > 0) {
-                    const maxX = Math.max(...Array.from(positions.values()).map(p => p.x + NODE_WIDTH))
-                    centerX = maxX + HORIZONTAL_SPACING
                 } else {
-                    centerX = totalGroupWidth / 2
+                    // No parents - try to center above children (via their spouse positions)
+                    let foundChildCenter = false
+                    for (const member of firstUnit.members) {
+                        const children = childrenMap.get(member.id)
+                        if (children) {
+                            for (const childId of children) {
+                                const childSpouses = spouseMap.get(childId)
+                                if (childSpouses) {
+                                    for (const spouseId of childSpouses) {
+                                        const spousePos = positions.get(spouseId)
+                                        if (spousePos) {
+                                            // Center above where the child's spouse is
+                                            // The child will be next to their spouse
+                                            centerX = spousePos.x + NODE_WIDTH + 30 + NODE_WIDTH / 2
+                                            foundChildCenter = true
+                                            break
+                                        }
+                                    }
+                                }
+                                if (foundChildCenter) break
+                            }
+                        }
+                        if (foundChildCenter) break
+                    }
+
+                    if (!foundChildCenter) {
+                        if (positions.size > 0) {
+                            const maxX = Math.max(...Array.from(positions.values()).map(p => p.x + NODE_WIDTH))
+                            centerX = maxX + HORIZONTAL_SPACING
+                        } else {
+                            centerX = totalGroupWidth / 2
+                        }
+                    }
                 }
 
                 // Calculate start position to center the group
@@ -575,23 +837,54 @@ export const useTreeLayout = () => {
                         if (!isSpouse) {
                             hasOverlaps = true
 
-                            // Only shift the current member and their spouse (if any)
-                            const toShift: string[] = [curr.id]
+                            // Check if current member is an "orphan parent" (has children but no parents)
+                            // Orphan parents should stay centered above their children
+                            const currParents = parentMap.get(curr.id)
+                            const currChildren = childrenMap.get(curr.id)
+                            const currIsOrphanParent = (!currParents || currParents.size === 0) && currChildren && currChildren.size > 0
 
-                            const currSpouses = spouseMap.get(curr.id)
-                            if (currSpouses) {
-                                currSpouses.forEach(spouseId => {
-                                    if (levels.get(spouseId) === level && !toShift.includes(spouseId)) {
-                                        toShift.push(spouseId)
+                            if (currIsOrphanParent) {
+                                // Shift the PREVIOUS member and everything to its left to the LEFT
+                                // This keeps the orphan parent in place (centered above their children)
+                                for (let j = i - 1; j >= 0; j--) {
+                                    const otherId = sortedMembers[j].id
+                                    const otherRight = positions.get(otherId)!.x + NODE_WIDTH + 30
+                                    const clearance = curr.x - otherRight
+                                    if (clearance < 0) {
+                                        // This member needs to shift left
+                                        const pos = positions.get(otherId)!
+                                        positions.set(otherId, { x: pos.x + clearance, y: pos.y })
+                                        // Also shift their spouse if they have one
+                                        const otherSpouses = spouseMap.get(otherId)
+                                        if (otherSpouses) {
+                                            otherSpouses.forEach(spouseId => {
+                                                if (levels.get(spouseId) === level) {
+                                                    const spousePos = positions.get(spouseId)!
+                                                    positions.set(spouseId, { x: spousePos.x + clearance, y: spousePos.y })
+                                                }
+                                            })
+                                        }
                                     }
+                                }
+                            } else {
+                                // Normal case: shift the current member and their spouse to the right
+                                const toShift: string[] = [curr.id]
+
+                                const currSpouses = spouseMap.get(curr.id)
+                                if (currSpouses) {
+                                    currSpouses.forEach(spouseId => {
+                                        if (levels.get(spouseId) === level && !toShift.includes(spouseId)) {
+                                            toShift.push(spouseId)
+                                        }
+                                    })
+                                }
+
+                                // Shift only this unit
+                                toShift.forEach(id => {
+                                    const pos = positions.get(id)!
+                                    positions.set(id, { x: pos.x + overlap, y: pos.y })
                                 })
                             }
-
-                            // Shift only this unit
-                            toShift.forEach(id => {
-                                const pos = positions.get(id)!
-                                positions.set(id, { x: pos.x + overlap, y: pos.y })
-                            })
 
                             // Break and restart the check from the beginning
                             break
