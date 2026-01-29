@@ -186,7 +186,7 @@
                 >
                   <option value="">None</option>
                   <option 
-                    v-for="member in existingMembers" 
+                    v-for="member in sortedMembers" 
                     :key="member.id" 
                     :value="member.id"
                   >
@@ -294,6 +294,15 @@ const likesInput = ref(props.initialData?.likes?.join(', ') || '')
 const relationship = reactive({
   memberId: '',
   type: 'child'
+})
+
+// Sort existing members alphabetically by first name, then last name
+const sortedMembers = computed(() => {
+  return [...props.existingMembers].sort((a, b) => {
+    const nameA = `${a.first_name} ${a.last_name}`.toLowerCase()
+    const nameB = `${b.first_name} ${b.last_name}`.toLowerCase()
+    return nameA.localeCompare(nameB)
+  })
 })
 
 // Parse comma-separated string to array
