@@ -226,6 +226,8 @@ onMounted(() => {
   border: 2px solid var(--color-parchment-border);
   border-radius: var(--radius-full);
   font-size: var(--text-2xl);
+  line-height: 1;
+  padding-bottom: 3px;
   color: var(--color-ink-muted);
   cursor: pointer;
   transition: all var(--transition-fast);
