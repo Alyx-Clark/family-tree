@@ -407,18 +407,22 @@ const endPan = () => {
   isPanning.value = false
 }
 
-// Zoom and pan handlers for trackpad gestures
+// Get input mode preference
+const { isMouseMode } = useInputMode()
+
+// Zoom and pan handlers for trackpad/mouse gestures
 const handleZoom = (e: WheelEvent) => {
   e.preventDefault()
   
-  // Determine if this is a zoom gesture:
-  // - Pinch-to-zoom: ctrlKey is true
-  // - Mouse wheel: only vertical movement (deltaX === 0)
+  // Pinch-to-zoom always triggers zoom (ctrlKey is set by browser for pinch gestures)
   const isPinchZoom = e.ctrlKey
-  const isMouseWheel = !e.ctrlKey && e.deltaX === 0 && e.deltaY !== 0
   
-  if (isPinchZoom || isMouseWheel) {
-    // Zoom sensitivity (mouse wheel is less sensitive than pinch)
+  // In mouse mode, wheel scrolls should zoom
+  // In trackpad mode, only pinch should zoom (regular scroll pans)
+  const shouldZoom = isPinchZoom || (isMouseMode.value && e.deltaY !== 0)
+  
+  if (shouldZoom) {
+    // Zoom sensitivity (pinch is more sensitive than mouse wheel)
     const zoomSensitivity = isPinchZoom ? 0.005 : 0.001
     const delta = -e.deltaY * zoomSensitivity
     const newScale = Math.max(0.25, Math.min(2, scale.value + delta))
@@ -440,7 +444,7 @@ const handleZoom = (e: WheelEvent) => {
     
     scale.value = newScale
   } else {
-    // Two-finger scroll on trackpad: pan in all directions
+    // Trackpad mode: two-finger scroll pans in all directions
     offsetX.value -= e.deltaX
     offsetY.value -= e.deltaY
   }

@@ -19,6 +19,14 @@
           <span>+</span>
         </button>
         <div class="header-divider"></div>
+        <button 
+          class="input-mode-toggle" 
+          @click="toggleInputMode" 
+          :title="isMouseMode ? 'Switch to trackpad mode' : 'Switch to mouse mode'"
+        >
+          <span class="input-icon mouse" :class="{ active: isMouseMode }">🖱️</span>
+          <span class="input-icon trackpad" :class="{ active: isTrackpadMode }">🔲</span>
+        </button>
         <button class="theme-toggle" @click="toggleColorMode" :title="isDark ? 'Switch to light mode' : 'Switch to dark mode'">
           <span class="theme-icon sun" :class="{ active: !isDark }">☀️</span>
           <span class="theme-icon moon" :class="{ active: isDark }">🌙</span>
@@ -38,9 +46,11 @@
 const treeName = useState('treeName', () => 'My Family Tree')
 const zoomLevel = useState('zoomLevel', () => 1)
 const { isDark, toggleColorMode, initColorMode } = useColorMode()
+const { isMouseMode, isTrackpadMode, toggleInputMode, initInputMode } = useInputMode()
 
 onMounted(() => {
   initColorMode()
+  initInputMode()
 })
 
 const toggleZoom = (direction: 'in' | 'out') => {
@@ -166,5 +176,38 @@ const toggleZoom = (direction: 'in' | 'out') => {
 .theme-icon.active {
   opacity: 1;
   transform: scale(1) rotate(0deg);
+}
+
+.input-mode-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--color-parchment);
+  border: 2px solid var(--color-parchment-border);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  overflow: hidden;
+}
+
+.input-mode-toggle:hover {
+  background: var(--color-parchment-dark);
+  transform: scale(1.05);
+}
+
+.input-icon {
+  position: absolute;
+  font-size: 1rem;
+  transition: all var(--transition-base);
+  opacity: 0;
+  transform: scale(0.5);
+}
+
+.input-icon.active {
+  opacity: 1;
+  transform: scale(1);
 }
 </style>
