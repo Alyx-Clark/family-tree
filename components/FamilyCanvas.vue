@@ -300,58 +300,78 @@ const visibleBranches = computed(() => {
     }
   })
 
-  // Draw remaining parent-child relationships (single parents)
+  // Draw remaining parent-child relationships (single parents or unprocessed)
+  // Group single parents with their children for family-group style
+  const singleParentChildren = new Map<string, string[]>()
+  
   relationships.value.forEach(rel => {
     if (rel.relationship_type !== 'parent') return
     
     const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
     if (processed.has(pairKey)) return
-    processed.add(pairKey)
-
-    const fromPos = memberPositions.value.get(rel.member_id)
-    const toPos = memberPositions.value.get(rel.related_member_id)
-
-    if (fromPos && toPos) {
-      const startX = fromPos.x + NODE_WIDTH / 2
-      const startY = fromPos.y + NODE_HEIGHT
-      const endX = toPos.x + NODE_WIDTH / 2
-      const endY = toPos.y
-      const midY = (startY + endY) / 2
-      
+    
+    // Group children by parent
+    if (!singleParentChildren.has(rel.member_id)) {
+      singleParentChildren.set(rel.member_id, [])
+    }
+    singleParentChildren.get(rel.member_id)!.push(rel.related_member_id)
+  })
+  
+  // Draw family-group style for single parents
+  singleParentChildren.forEach((children, parentId) => {
+    const parentPos = memberPositions.value.get(parentId)
+    if (!parentPos) return
+    
+    // Mark all as processed
+    children.forEach(childId => {
+      processed.add([parentId, childId].sort().join('-'))
+    })
+    
+    const childPositions = children
+      .map(childId => memberPositions.value.get(childId))
+      .filter(pos => pos) as Position[]
+    
+    if (childPositions.length === 0) return
+    
+    // Calculate positions
+    const parentCenterX = parentPos.x + NODE_WIDTH / 2
+    const dropY = parentPos.y + NODE_HEIGHT + 40
+    const horizontalY = dropY + 30
+    
+    const childMinX = Math.min(...childPositions.map(p => p.x + NODE_WIDTH / 2))
+    const childMaxX = Math.max(...childPositions.map(p => p.x + NODE_WIDTH / 2))
+    
+    // Draw vertical line from parent down
+    branches.push({
+      id: `single-parent-drop-${parentId}`,
+      pathData: `M ${parentCenterX} ${parentPos.y + NODE_HEIGHT} L ${parentCenterX} ${horizontalY}`,
+      relationshipType: 'family-drop',
+      strokeColor: '#5c4033'
+    })
+    
+    // Draw horizontal bar connecting to all children (if more than one)
+    if (childPositions.length > 1) {
       branches.push({
-        id: `parent-${pairKey}`,
-        pathData: `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`,
-        relationshipType: 'parent',
+        id: `single-parent-bar-${parentId}`,
+        pathData: `M ${childMinX} ${horizontalY} L ${childMaxX} ${horizontalY}`,
+        relationshipType: 'family-bar',
         strokeColor: '#5c4033'
       })
     }
-  })
-
-  // Draw sibling relationships
-  relationships.value.forEach(rel => {
-    if (rel.relationship_type !== 'sibling') return
     
-    const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
-    if (processed.has(pairKey)) return
-    processed.add(pairKey)
-
-    const fromPos = memberPositions.value.get(rel.member_id)
-    const toPos = memberPositions.value.get(rel.related_member_id)
-
-    if (fromPos && toPos) {
-      const y = fromPos.y + NODE_HEIGHT / 2
-      const startX = fromPos.x + NODE_WIDTH
-      const endX = toPos.x
-      const midX = (startX + endX) / 2
-      
+    // Draw vertical lines down to each child
+    childPositions.forEach((childPos, i) => {
+      const childCenterX = childPos.x + NODE_WIDTH / 2
       branches.push({
-        id: `sibling-${pairKey}`,
-        pathData: `M ${startX} ${y} Q ${midX} ${y - 30}, ${endX} ${y}`,
-        relationshipType: 'sibling',
-        strokeColor: '#8b7355'
+        id: `single-parent-child-${parentId}-${i}`,
+        pathData: `M ${childCenterX} ${horizontalY} L ${childCenterX} ${childPos.y}`,
+        relationshipType: 'family-child',
+        strokeColor: '#5c4033'
       })
-    }
+    })
   })
+
+  // Sibling relationships are not drawn - they can be inferred from shared parent connections
 
   console.log('Visible branches:', branches.length)
 
@@ -517,40 +537,60 @@ const handleAddMember = async (data: {
             )
           }
         }
-      } else if (data.relationship.type === 'parent') {
-        // New member is parent of existing member  
-        await addRelationship(
-          result.data.id,           // New member (the parent)
-          data.relationship.memberId, // Existing member (the child)
-          'parent' as any
-        )
-        
-        // Infer spouse relationships: if the child already has other parents, 
-        // the new parent should be a spouse of those existing parents
-        const existingChildId = data.relationship.memberId
-        const existingParentRelationships = relationships.value.filter(
-          r => r.member_id === existingChildId && r.relationship_type === 'child'
-        )
-        
-        // Create spouse relationships with existing parents
-        for (const rel of existingParentRelationships) {
-          const existingParentId = rel.related_member_id
-          // Don't create spouse relationship with self
-          if (existingParentId !== result.data.id) {
-            // Check if spouse relationship already exists
-            const spouseExists = relationships.value.some(
-              r => (r.member_id === result.data.id && r.related_member_id === existingParentId && r.relationship_type === 'spouse') ||
-                   (r.member_id === existingParentId && r.related_member_id === result.data.id && r.relationship_type === 'spouse')
+        } else if (data.relationship.type === 'parent') {
+          // New member is parent of existing member  
+          await addRelationship(
+            result.data.id,           // New member (the parent)
+            data.relationship.memberId, // Existing member (the child)
+            'parent' as any
+          )
+          
+          // Infer sibling relationships: new parent should also be parent of child's siblings
+          const existingChildId = data.relationship.memberId
+          const siblingsOfChild = relationships.value.filter(
+            r => r.member_id === existingChildId && r.relationship_type === 'sibling'
+          )
+          
+          for (const siblingRel of siblingsOfChild) {
+            const siblingId = siblingRel.related_member_id
+            // Check if parent relationship already exists
+            const alreadyParent = relationships.value.some(
+              r => r.member_id === result.data.id && r.related_member_id === siblingId && r.relationship_type === 'parent'
             )
-            if (!spouseExists) {
+            if (!alreadyParent) {
               await addRelationship(
-                result.data.id,
-                existingParentId,
-                'spouse' as any
+                result.data.id,  // New parent
+                siblingId,       // Sibling of the child
+                'parent' as any
               )
             }
           }
-        }
+          
+          // Infer spouse relationships: if the child already has other parents, 
+          // the new parent should be a spouse of those existing parents
+          const existingParentRelationships = relationships.value.filter(
+            r => r.member_id === existingChildId && r.relationship_type === 'child'
+          )
+          
+          // Create spouse relationships with existing parents
+          for (const rel of existingParentRelationships) {
+            const existingParentId = rel.related_member_id
+            // Don't create spouse relationship with self
+            if (existingParentId !== result.data.id) {
+              // Check if spouse relationship already exists
+              const spouseExists = relationships.value.some(
+                r => (r.member_id === result.data.id && r.related_member_id === existingParentId && r.relationship_type === 'spouse') ||
+                     (r.member_id === existingParentId && r.related_member_id === result.data.id && r.relationship_type === 'spouse')
+              )
+              if (!spouseExists) {
+                await addRelationship(
+                  result.data.id,
+                  existingParentId,
+                  'spouse' as any
+                )
+              }
+            }
+          }
       } else if (data.relationship.type === 'sibling') {
         // For siblings: add sibling relationship AND inherit parents
         await addRelationship(

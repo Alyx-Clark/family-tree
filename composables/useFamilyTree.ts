@@ -1,7 +1,8 @@
 import type { FamilyTree, FamilyMember, FamilyRelationship, RelationshipType } from '~/types'
+import type { Database } from '~/types/database'
 
 export const useFamilyTree = () => {
-    const supabase = useSupabaseClient()
+    const supabase = useSupabaseClient<Database>()
     const user = useSupabaseUser()
 
     const isLoading = ref(false)
@@ -80,8 +81,8 @@ export const useFamilyTree = () => {
                 .eq('tree_id', tree.value.id)
 
             if (fetchError) throw fetchError
-            relationships.value = data || []
-            return data || []
+            relationships.value = (data || []) as FamilyRelationship[]
+            return (data || []) as FamilyRelationship[]
         } catch (e: any) {
             console.error('Error fetching relationships:', e.message)
             return []
@@ -96,23 +97,30 @@ export const useFamilyTree = () => {
         error.value = null
 
         try {
+            // Ensure required fields are present
+            if (!memberData.first_name || !memberData.last_name) {
+                throw new Error('First name and last name are required')
+            }
+
+            const insertData = {
+                tree_id: tree.value.id,
+                first_name: memberData.first_name,
+                middle_name: memberData.middle_name || null,
+                last_name: memberData.last_name,
+                birth_date: memberData.birth_date || null,
+                death_date: memberData.death_date || null,
+                photo_url: memberData.photo_url || null,
+                bio: memberData.bio || null,
+                hobbies: memberData.hobbies || [],
+                interests: memberData.interests || [],
+                likes: memberData.likes || [],
+                position_x: memberData.position_x || 0,
+                position_y: memberData.position_y || 0
+            }
+
             const { data, error: insertError } = await supabase
                 .from('family_members')
-                .insert({
-                    tree_id: tree.value.id,
-                    first_name: memberData.first_name,
-                    middle_name: memberData.middle_name || null,
-                    last_name: memberData.last_name,
-                    birth_date: memberData.birth_date || null,
-                    death_date: memberData.death_date || null,
-                    photo_url: memberData.photo_url || null,
-                    bio: memberData.bio || null,
-                    hobbies: memberData.hobbies || [],
-                    interests: memberData.interests || [],
-                    likes: memberData.likes || [],
-                    position_x: memberData.position_x || 0,
-                    position_y: memberData.position_y || 0
-                })
+                .insert(insertData)
                 .select()
                 .single()
 
@@ -208,7 +216,7 @@ export const useFamilyTree = () => {
 
             if (insertError) throw insertError
 
-            relationships.value = [...relationships.value, data]
+            relationships.value = [...relationships.value, data as FamilyRelationship]
 
             // Add the inverse relationship
             const inverseType = getInverseRelationship(relationshipType)
@@ -225,7 +233,7 @@ export const useFamilyTree = () => {
                     .single()
 
                 if (inverseData) {
-                    relationships.value = [...relationships.value, inverseData]
+                    relationships.value = [...relationships.value, inverseData as FamilyRelationship]
                 }
             }
 

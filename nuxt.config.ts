@@ -6,6 +6,10 @@ export default defineNuxtConfig({
     '@nuxtjs/supabase'
   ],
 
+  typescript: {
+    typeCheck: false
+  },
+
   css: [
     '~/assets/css/main.css'
   ],
