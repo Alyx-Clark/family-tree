@@ -190,7 +190,7 @@
                     :key="member.id" 
                     :value="member.id"
                   >
-                    {{ member.first_name }} {{ member.last_name }}
+                    {{ member.first_name }}{{ member.middle_name ? ` ${member.middle_name[0]}.` : '' }} {{ member.last_name }}
                   </option>
                 </select>
               </div>

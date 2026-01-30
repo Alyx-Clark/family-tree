@@ -22,24 +22,87 @@
       <!-- SVG Layer for Branches -->
       <svg class="branches-layer" :viewBox="svgViewBox" :style="svgStyle">
         <defs>
-          <linearGradient id="branchGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" style="stop-color: #6b5344; stop-opacity: 1" />
-            <stop offset="100%" style="stop-color: #4a3728; stop-opacity: 1" />
-          </linearGradient>
+          <!-- Soft blur for branch drop shadows -->
+          <filter id="branchShadow" x="-300%" y="-300%" width="700%" height="700%">
+            <feGaussianBlur stdDeviation="3"/>
+          </filter>
+
+          <!-- Organic edge displacement for natural bark contour -->
+          <filter id="organicEdge" x="-300%" y="-300%" width="700%" height="700%">
+            <feTurbulence type="fractalNoise" baseFrequency="0.03 0.1" numOctaves="3" seed="5" result="noise"/>
+            <feDisplacementMap in="SourceGraphic" in2="noise" scale="1.5" xChannelSelector="R" yChannelSelector="G"/>
+          </filter>
+
+          <!-- Subtle shadow for spouse connectors -->
+          <filter id="vineShadow" x="-300%" y="-300%" width="700%" height="700%">
+            <feGaussianBlur in="SourceGraphic" stdDeviation="1" result="blur"/>
+            <feOffset in="blur" dx="1" dy="1.5" result="offset"/>
+            <feFlood flood-color="rgba(15,10,5,0.2)" result="fill"/>
+            <feComposite in="fill" in2="offset" operator="in" result="shadow"/>
+            <feMerge>
+              <feMergeNode in="shadow"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
         </defs>
-        <!-- Render all branches as paths -->
-        <path
-          v-for="branch in visibleBranches"
-          :key="branch.id"
-          :d="branch.pathData"
-          :stroke="branch.strokeColor"
-          :stroke-width="branch.relationshipType === 'spouse' ? 3 : 5"
-          :stroke-dasharray="branch.relationshipType === 'spouse' ? '8,4' : 'none'"
-          fill="none"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          class="branch-path"
-        />
+
+        <!-- Render branches with layered 3D bark effect -->
+        <template v-for="branch in visibleBranches" :key="branch.id">
+          <!-- Spouse connector (dashed gold line with shadow) -->
+          <path
+            v-if="branch.relationshipType === 'spouse'"
+            :d="branch.pathData"
+            :stroke="branch.strokeColor"
+            stroke-width="3"
+            stroke-dasharray="8,4"
+            fill="none"
+            stroke-linecap="round"
+            filter="url(#vineShadow)"
+            class="branch-path"
+          />
+
+          <!-- Bark branches: 4 layered paths for realistic 3D wood -->
+          <g v-else>
+            <!-- Layer 1: Drop shadow (soft dark blur behind the branch) -->
+            <path
+              :d="branch.pathData"
+              stroke="rgba(20,12,5,0.3)"
+              :stroke-width="branch.relationshipType.includes('child') ? 11 : 14"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              filter="url(#branchShadow)"
+            />
+            <!-- Layer 2: Dark bark outer edge (with organic waviness) -->
+            <path
+              :d="branch.pathData"
+              stroke="#3d2a1a"
+              :stroke-width="branch.relationshipType.includes('child') ? 8 : 10"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              filter="url(#organicEdge)"
+            />
+            <!-- Layer 3: Main bark surface color -->
+            <path
+              :d="branch.pathData"
+              stroke="#6b5344"
+              :stroke-width="branch.relationshipType.includes('child') ? 5 : 7"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <!-- Layer 4: Light center highlight (3D cylindrical roundness) -->
+            <path
+              :d="branch.pathData"
+              stroke="rgba(200,180,150,0.35)"
+              :stroke-width="branch.relationshipType.includes('child') ? 1.5 : 2.5"
+              fill="none"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </g>
+        </template>
       </svg>
       
       <!-- Family Members Layer -->
