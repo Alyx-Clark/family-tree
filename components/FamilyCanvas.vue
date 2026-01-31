@@ -50,9 +50,9 @@
         <template v-for="branch in visibleBranches" :key="branch.id">
           <!-- Spouse connector (dashed gold line with shadow) -->
           <path
-            v-if="branch.relationshipType === 'spouse'"
-            :d="branch.pathData"
-            :stroke="branch.strokeColor"
+            v-if="branch.type === 'spouse'"
+            :d="branch.path"
+            :stroke="branch.stroke"
             stroke-width="3"
             stroke-dasharray="8,4"
             fill="none"
@@ -65,9 +65,9 @@
           <g v-else>
             <!-- Layer 1: Drop shadow (soft dark blur behind the branch) -->
             <path
-              :d="branch.pathData"
+              :d="branch.path"
               stroke="rgba(20,12,5,0.3)"
-              :stroke-width="branch.relationshipType.includes('child') ? 11 : 14"
+              :stroke-width="branch.width * 5"
               fill="none"
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -75,9 +75,9 @@
             />
             <!-- Layer 2: Dark bark outer edge (with organic waviness) -->
             <path
-              :d="branch.pathData"
+              :d="branch.path"
               stroke="#3d2a1a"
-              :stroke-width="branch.relationshipType.includes('child') ? 8 : 10"
+              :stroke-width="branch.width * 4"
               fill="none"
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -85,18 +85,18 @@
             />
             <!-- Layer 3: Main bark surface color -->
             <path
-              :d="branch.pathData"
+              :d="branch.path"
               stroke="#6b5344"
-              :stroke-width="branch.relationshipType.includes('child') ? 5 : 7"
+              :stroke-width="branch.width * 2.5"
               fill="none"
               stroke-linecap="round"
               stroke-linejoin="round"
             />
             <!-- Layer 4: Light center highlight (3D cylindrical roundness) -->
             <path
-              :d="branch.pathData"
+              :d="branch.path"
               stroke="rgba(200,180,150,0.35)"
-              :stroke-width="branch.relationshipType.includes('child') ? 1.5 : 2.5"
+              :stroke-width="branch.width * 0.8"
               fill="none"
               stroke-linecap="round"
               stroke-linejoin="round"
@@ -191,7 +191,7 @@
 import type { FamilyMember, Position } from '~/types'
 
 const { members, relationships, isLoading, initialize, addMember, updateMember, deleteMember, addRelationship, uploadMemberPhoto } = useFamilyTree()
-const { calculateLayout, generateBranchPath, NODE_WIDTH, NODE_HEIGHT } = useTreeLayout()
+const { calculateLayout, getBranches, NODE_WIDTH, NODE_HEIGHT } = useTreeLayout()
 
 // Canvas state
 const canvasRef = ref<HTMLElement | null>(null)
@@ -207,239 +207,53 @@ const editingMember = ref<FamilyMember | null>(null)
 const memberToDelete = ref<FamilyMember | null>(null)
 const viewingMember = ref<FamilyMember | null>(null)
 
-// Computed positions from layout
-const memberPositions = computed(() => {
-  return calculateLayout(members.value, relationships.value)
-})
-
-// SVG bounds that encompasses all member positions
-const svgBounds = computed(() => {
-  if (members.value.length === 0) {
-    return { minX: -500, minY: -500, width: 1000, height: 1000 }
-  }
-  
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  
-  memberPositions.value.forEach(pos => {
-    minX = Math.min(minX, pos.x - 100)
-    minY = Math.min(minY, pos.y - 100)
-    maxX = Math.max(maxX, pos.x + NODE_WIDTH + 100)
-    maxY = Math.max(maxY, pos.y + NODE_HEIGHT + 100)
+    // Calculate layout and branches
+  const memberPositions = computed(() => {
+    return calculateLayout(members.value, relationships.value)
   })
-  
-  return {
-    minX,
-    minY,
-    width: maxX - minX,
-    height: maxY - minY
-  }
-})
 
-// SVG viewBox string
-const svgViewBox = computed(() => {
-  const b = svgBounds.value
-  return `${b.minX} ${b.minY} ${b.width} ${b.height}`
-})
-
-// SVG style for explicit positioning
-const svgStyle = computed(() => ({
-  position: 'absolute' as const,
-  left: `${svgBounds.value.minX}px`,
-  top: `${svgBounds.value.minY}px`,
-  width: `${svgBounds.value.width}px`,
-  height: `${svgBounds.value.height}px`
-}))
-
-// Generate branch data for rendering with family group logic
-const visibleBranches = computed(() => {
-  const branches: Array<{
-    id: string
-    pathData: string
-    relationshipType: string
-    strokeColor: string
-  }> = []
-
-  const processed = new Set<string>()
-  const processedFamilyGroups = new Set<string>()
-
-  // First, identify and draw spouse connections
-  relationships.value.forEach(rel => {
-    if (rel.relationship_type !== 'spouse') return
+  // SVG bounds that encompasses all member positions
+  const svgBounds = computed(() => {
+    if (members.value.length === 0) {
+      return { minX: -500, minY: -500, width: 1000, height: 1000 }
+    }
     
-    const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
-    if (processed.has(pairKey)) return
-    processed.add(pairKey)
-
-    const fromPos = memberPositions.value.get(rel.member_id)
-    const toPos = memberPositions.value.get(rel.related_member_id)
-
-    if (fromPos && toPos) {
-      // Draw horizontal spouse connector
-      const y = fromPos.y + NODE_HEIGHT / 2
-      const startX = Math.min(fromPos.x, toPos.x) + NODE_WIDTH
-      const endX = Math.max(fromPos.x, toPos.x)
-      const midX = (startX + endX) / 2
-      
-      branches.push({
-        id: `spouse-${pairKey}`,
-        pathData: `M ${startX} ${y} Q ${midX} ${y - 15}, ${endX} ${y}`,
-        relationshipType: 'spouse',
-        strokeColor: '#c9a227'
-      })
-
-      // Find shared children and draw family group branch
-      const parent1Children = new Set<string>()
-      const parent2Children = new Set<string>()
-      
-      relationships.value.forEach(r => {
-        if (r.member_id === rel.member_id && r.relationship_type === 'parent') {
-          parent1Children.add(r.related_member_id)
-        }
-        if (r.member_id === rel.related_member_id && r.relationship_type === 'parent') {
-          parent2Children.add(r.related_member_id)
-        }
-      })
-
-      // Find children that belong to both parents
-      const sharedChildren = Array.from(parent1Children).filter(c => parent2Children.has(c))
-      
-      if (sharedChildren.length > 0) {
-        const familyKey = [...sharedChildren].sort().join('-')
-        if (!processedFamilyGroups.has(familyKey)) {
-          processedFamilyGroups.add(familyKey)
-          
-          // Calculate positions
-          const spouseMidX = (fromPos.x + toPos.x + NODE_WIDTH) / 2
-          const spouseY = fromPos.y + NODE_HEIGHT / 2
-          const dropY = fromPos.y + NODE_HEIGHT + 40 // Vertical drop point
-          
-          // Get child positions
-          const childPositions = sharedChildren
-            .map(childId => memberPositions.value.get(childId))
-            .filter(pos => pos) as Position[]
-          
-          if (childPositions.length > 0) {
-            const childMinX = Math.min(...childPositions.map(p => p.x + NODE_WIDTH / 2))
-            const childMaxX = Math.max(...childPositions.map(p => p.x + NODE_WIDTH / 2))
-            const horizontalY = dropY + 30
-            
-            // Draw vertical line from spouse connector down
-            branches.push({
-              id: `family-drop-${familyKey}`,
-              pathData: `M ${spouseMidX} ${spouseY - 7} L ${spouseMidX} ${horizontalY}`,
-              relationshipType: 'family-drop',
-              strokeColor: '#5c4033'
-            })
-            
-            // Draw horizontal bar connecting to all children
-            if (childPositions.length > 1) {
-              branches.push({
-                id: `family-bar-${familyKey}`,
-                pathData: `M ${childMinX} ${horizontalY} L ${childMaxX} ${horizontalY}`,
-                relationshipType: 'family-bar',
-                strokeColor: '#5c4033'
-              })
-            }
-            
-            // Draw vertical lines down to each child
-            childPositions.forEach((childPos, i) => {
-              const childCenterX = childPos.x + NODE_WIDTH / 2
-              branches.push({
-                id: `family-child-${familyKey}-${i}`,
-                pathData: `M ${childCenterX} ${horizontalY} L ${childCenterX} ${childPos.y}`,
-                relationshipType: 'family-child',
-                strokeColor: '#5c4033'
-              })
-            })
-            
-            // Mark these parent-child relationships as processed
-            sharedChildren.forEach(childId => {
-              processed.add([rel.member_id, childId].sort().join('-'))
-              processed.add([rel.related_member_id, childId].sort().join('-'))
-            })
-          }
-        }
-      }
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    
+    memberPositions.value.forEach(pos => {
+      minX = Math.min(minX, pos.x - 100)
+      minY = Math.min(minY, pos.y - 100)
+      maxX = Math.max(maxX, pos.x + NODE_WIDTH + 100)
+      maxY = Math.max(maxY, pos.y + NODE_HEIGHT + 100)
+    })
+    
+    return {
+      minX,
+      minY,
+      width: maxX - minX,
+      height: maxY - minY
     }
   })
 
-  // Draw remaining parent-child relationships (single parents or unprocessed)
-  // Group single parents with their children for family-group style
-  const singleParentChildren = new Map<string, string[]>()
-  
-  relationships.value.forEach(rel => {
-    if (rel.relationship_type !== 'parent') return
-    
-    const pairKey = [rel.member_id, rel.related_member_id].sort().join('-')
-    if (processed.has(pairKey)) return
-    
-    // Group children by parent
-    if (!singleParentChildren.has(rel.member_id)) {
-      singleParentChildren.set(rel.member_id, [])
-    }
-    singleParentChildren.get(rel.member_id)!.push(rel.related_member_id)
-  })
-  
-  // Draw family-group style for single parents
-  singleParentChildren.forEach((children, parentId) => {
-    const parentPos = memberPositions.value.get(parentId)
-    if (!parentPos) return
-    
-    // Mark all as processed
-    children.forEach(childId => {
-      processed.add([parentId, childId].sort().join('-'))
-    })
-    
-    const childPositions = children
-      .map(childId => memberPositions.value.get(childId))
-      .filter(pos => pos) as Position[]
-    
-    if (childPositions.length === 0) return
-    
-    // Calculate positions
-    const parentCenterX = parentPos.x + NODE_WIDTH / 2
-    const dropY = parentPos.y + NODE_HEIGHT + 40
-    const horizontalY = dropY + 30
-    
-    const childMinX = Math.min(...childPositions.map(p => p.x + NODE_WIDTH / 2))
-    const childMaxX = Math.max(...childPositions.map(p => p.x + NODE_WIDTH / 2))
-    
-    // Draw vertical line from parent down
-    branches.push({
-      id: `single-parent-drop-${parentId}`,
-      pathData: `M ${parentCenterX} ${parentPos.y + NODE_HEIGHT} L ${parentCenterX} ${horizontalY}`,
-      relationshipType: 'family-drop',
-      strokeColor: '#5c4033'
-    })
-    
-    // Draw horizontal bar connecting to all children (if more than one)
-    if (childPositions.length > 1) {
-      branches.push({
-        id: `single-parent-bar-${parentId}`,
-        pathData: `M ${childMinX} ${horizontalY} L ${childMaxX} ${horizontalY}`,
-        relationshipType: 'family-bar',
-        strokeColor: '#5c4033'
-      })
-    }
-    
-    // Draw vertical lines down to each child
-    childPositions.forEach((childPos, i) => {
-      const childCenterX = childPos.x + NODE_WIDTH / 2
-      branches.push({
-        id: `single-parent-child-${parentId}-${i}`,
-        pathData: `M ${childCenterX} ${horizontalY} L ${childCenterX} ${childPos.y}`,
-        relationshipType: 'family-child',
-        strokeColor: '#5c4033'
-      })
-    })
+  // SVG viewBox string
+  const svgViewBox = computed(() => {
+    const b = svgBounds.value
+    return `${b.minX} ${b.minY} ${b.width} ${b.height}`
   })
 
-  // Sibling relationships are not drawn - they can be inferred from shared parent connections
+  // SVG style for explicit positioning
+  const svgStyle = computed(() => ({
+    position: 'absolute' as const,
+    left: `${svgBounds.value.minX}px`,
+    top: `${svgBounds.value.minY}px`,
+    width: `${svgBounds.value.width}px`,
+    height: `${svgBounds.value.height}px`
+  }))
 
-  console.log('Visible branches:', branches.length)
-
-  return branches
-})
+  // Get display branches from the layout engine
+  const visibleBranches = computed(() => {
+    return getBranches(members.value, relationships.value, memberPositions.value)
+  })
 
 // Transform style for pan/zoom
 const transformStyle = computed(() => ({
@@ -765,9 +579,17 @@ const handleDeleteMember = async () => {
   memberToDelete.value = null
 }
 
+// Watch for members to load to ensure layout is ready
+watch(() => members.value.length, async (count) => {
+  if (count > 0) {
+    // Ensure layout is calculated
+    await nextTick()
+  }
+}, { immediate: true })
+
 // Initialize on mount
 onMounted(async () => {
-  await initialize()
+  // Data is initialized by the page component
   
   // Center the view if there are members
   if (members.value.length > 0) {

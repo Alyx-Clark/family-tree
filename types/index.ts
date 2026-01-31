@@ -8,7 +8,7 @@ export interface Profile {
     updated_at: string
 }
 
-// Family tree - one per user
+// Family tree - users can have multiple trees
 export interface FamilyTree {
     id: string
     user_id: string
@@ -93,4 +93,12 @@ export interface AuthState {
     isAuthenticated: boolean
     isLoading: boolean
     user: Profile | null
+}
+
+// Tree list item for dashboard display
+export interface TreeListItem {
+    id: string
+    name: string
+    member_count: number
+    updated_at: string
 }

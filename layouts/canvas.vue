@@ -2,10 +2,13 @@
   <div class="canvas-layout">
     <header class="canvas-header">
       <div class="header-left">
-        <NuxtLink to="/dashboard" class="logo-link">
+        <NuxtLink to="/dashboard" class="back-link" title="Back to Dashboard">
+          <span class="back-icon">←</span>
+        </NuxtLink>
+        <div class="logo-section">
           <span class="logo-icon">🌳</span>
           <span class="logo-text">Family Tree</span>
-        </NuxtLink>
+        </div>
       </div>
       <div class="header-center">
         <h1 class="tree-name">{{ treeName }}</h1>
@@ -84,13 +87,38 @@ const toggleZoom = (direction: 'in' | 'out') => {
 
 .header-left {
   flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
-.logo-link {
-  display: inline-flex;
+.back-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: var(--color-parchment);
+  border: 2px solid var(--color-parchment-border);
+  border-radius: var(--radius-full);
+  text-decoration: none;
+  transition: all var(--transition-fast);
+}
+
+.back-link:hover {
+  background: var(--color-parchment-dark);
+  transform: scale(1.05);
+}
+
+.back-icon {
+  font-size: var(--text-lg);
+  color: var(--color-bark);
+}
+
+.logo-section {
+  display: flex;
   align-items: center;
   gap: var(--space-2);
-  text-decoration: none;
 }
 
 .logo-icon {

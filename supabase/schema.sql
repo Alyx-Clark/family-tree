@@ -14,14 +14,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
--- Family trees (one per user)
+-- Family trees (multiple per user)
 CREATE TABLE IF NOT EXISTS public.family_trees (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
   name TEXT DEFAULT 'My Family Tree' NOT NULL,
   created_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL,
-  UNIQUE(user_id) -- Each user can only have one tree
+  updated_at TIMESTAMPTZ DEFAULT NOW() NOT NULL
 );
 
 -- Family members (leaves)
@@ -137,11 +136,7 @@ RETURNS TRIGGER AS $$
 BEGIN
   INSERT INTO public.profiles (id, email, full_name)
   VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'full_name');
-  
-  -- Also create a default family tree for the user
-  INSERT INTO public.family_trees (user_id, name)
-  VALUES (NEW.id, 'My Family Tree');
-  
+  -- Users create trees manually from the dashboard
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
