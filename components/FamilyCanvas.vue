@@ -564,12 +564,20 @@ const handleUpdateMember = async (data: {
   updates: Partial<FamilyMember>
   photoFile?: File 
 }) => {
+  // Create a copy of updates to modify safely
+  const finalUpdates = { ...data.updates }
+
   // Upload photo if file provided
   if (data.photoFile) {
-    await uploadMemberPhoto(data.id, data.photoFile)
+    const result = await uploadMemberPhoto(data.id, data.photoFile)
+    if (result.success && result.url) {
+      // Use the returned URL for the final update to prevent overwriting 
+      // the just-uploaded photo with stale data (null/empty) from the form
+      finalUpdates.photo_url = result.url
+    }
   }
   
-  await updateMember(data.id, data.updates)
+  await updateMember(data.id, finalUpdates)
   editingMember.value = null
 }
 
